@@ -3,6 +3,10 @@
 # Function to install packages
 install_packages() {
     for pkg in "$@"; do
+        if yay -Qs "^${pkg}$" >/dev/null; then
+            echo "Package $pkg already installed, skipping."
+            continue
+        fi
         if yay -Ss "^${pkg}$" >/dev/null; then
             yay -S --noconfirm "$pkg"
         else
@@ -13,22 +17,17 @@ install_packages() {
     return 0
 }
 
-set_localectl() {
-    # Set localectl
-    read -p "Choose keyboard: [us/br] " keyboard
-    if [[ "$keyboard" != "us" && "$keyboard" != "br" ]]; then
-        echo "Invalid option. Please choose 'us' or 'br'."
-        return 1
+install_yay() {
+    if [command -v yay &> /dev/null]; then
+        return 0
     fi
-    localectl set-x11-keymap "$keyboard" "" "${keyboard}_intl"
+
+    sudo pacman -S yay --noconfirm 
 }
 
 # Main function
 main() {
-    # Set localectl
-    set_localectl || return 1
-
-    # Get Variables     
+    # Get Variables
     read -p "Enter your name: " name
     read -p "Enter your email: " email
     read -p "Default editor: [vim, nano] " editor
@@ -38,18 +37,14 @@ main() {
     echo "Updating packages..."
     sudo pacman -Syu --noconfirm
 
+    # Install base packages
+    echo "Installing base packages..."
+    install_yay || return 1
+    install_packages git zsh wget curl base-devel || return 1
+
     # Install fonts
     echo "Installing fonts..."
     install_packages noto-fonts noto-fonts-emoji noto-fonts-cjk noto-fonts-extra || return 1
-
-    # Install base packages
-    echo "Installing base packages..."
-    install_packages git zsh wget curl base-devel "$editor" || return 1
-
-    git clone https://aur.archlinux.org/yay.git
-    cd yay || return 1
-    makepkg -si --noconfirm
-    cd ..
 
     # Install development tools
     echo "Installing development tools..."
@@ -69,16 +64,15 @@ main() {
     fi
 
     # Configure docker
-    sudo groupadd docker
+    echo "Adding user to docker group..."  
     sudo usermod -aG docker "$USER"
-    newgrp docker
-
+    
     # Optional packages
     declare -A packages_options
     packages_options=(
         [1]="brave-bin"
         [2]="firefox"
-        [3]="microsoft-edge-dev-bin"
+        [3]="microsoft-edge-stable-bin"
         [4]="discord"
         [5]="spotify"
         [6]="steam"
@@ -112,6 +106,12 @@ if [ $RETVAL -eq 0 ]; then
     echo "Script completed successfully!"
 else
     echo "An error occurred during the execution of the script."
+fi
+
+if [ ! -z "$RETVAL" ]; then
+    touch error.log
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): Error executing the script, return value: $RETVAL" >> error.log
+    echo "$(cat /var/log/pacman.log 2>&1)" >> error.log
 fi
 
 exit $RETVAL
